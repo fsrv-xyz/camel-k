@@ -28,20 +28,27 @@ VERSION ?= 2.6.0-SNAPSHOT
 LAST_RELEASED_IMAGE_NAME := camel-k-operator
 LAST_RELEASED_VERSION ?= 2.5.0
 DEFAULT_RUNTIME_VERSION := 3.15.0
+# Kubernetes tooling
 CONTROLLER_GEN_VERSION := v0.15.0
-CODEGEN_VERSION := v0.29.7
+CODEGEN_VERSION := v0.30.6
 OPERATOR_SDK_VERSION := v1.30.0
 KUSTOMIZE_VERSION := v4.5.4
 OPM_VERSION := v1.24.0
-LINTER_VERSION ?= v1.59.1
-GOVULNCHECK_VERSION ?= latest
-
+# Golang tooling
 LINTER ?= $(LOCALBIN)/golangci-lint
+DEADCODE ?= $(LOCALBIN)/deadcode
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 GOIMPORT ?= $(LOCALBIN)/goimports
+LINTER_VERSION ?= v1.61.0
+GOVULNCHECK_VERSION ?= latest
+LINT_GOGC ?= 20
+LINT_DEADLINE ?= 10m
+DEBUG_MODE ?= false
 
+# Operator building configuration
 BASE_IMAGE := eclipse-temurin:17
 LOCAL_REPOSITORY := /etc/maven/m2
+OPENSHIFT_REGISTRY := image-registry.openshift-image-registry.svc:5000
 IMAGE_NAME ?= docker.io/apache/camel-k
 # Test for arm64, fall back to amd64
 IMAGE_ARCH ?= $(if $(filter arm64 aarch64,$(shell uname -m)),arm64,amd64)
@@ -60,10 +67,6 @@ METADATA_IMAGE_NAME := $(CUSTOM_IMAGE)-metadata
 BUNDLE_IMAGE_NAME ?= $(CUSTOM_IMAGE)-bundle
 RELEASE_GIT_REMOTE := origin
 GIT_COMMIT := $(shell if [ -d .git ]; then git rev-list -1 HEAD; else echo "$(CUSTOM_VERSION)"; fi)
-LINT_GOGC ?= 20
-LINT_DEADLINE ?= 10m
-DEBUG_MODE ?= false
-OPENSHIFT_REGISTRY := image-registry.openshift-image-registry.svc:5000
 
 # olm bundle vars
 MANAGER := pkg/resources/config/manager
@@ -409,6 +412,11 @@ fmt: goimport
 	$(GOIMPORT) -l -w .
 	go fmt ./...
 
+dead-code:
+	GOBIN=$(LOCALBIN) go install golang.org/x/tools/cmd/deadcode@latest
+	GOGC=$(LINT_GOGC) $(DEADCODE) ./...
+
+
 dir-licenses:
 	./script/vendor-license-directory.sh
 
@@ -597,10 +605,8 @@ endif
 .PHONY: $(BUNDLE_CAMEL_APIS) pre-bundle bundle bundle-build
 
 # - Have to copy pkg/apis since it is a module in its own right
-# - The dependency of v1alpha1 api on v1 results in duplication
-#   of the v1 schema in those CRDs so need to split them up
 # - No way to add a licence header to the CRD other then post-script
-BUNDLE_CAMEL_APIS = v1 v1alpha1
+BUNDLE_CAMEL_APIS = v1
 
 $(BUNDLE_CAMEL_APIS): operator-sdk
 	@# Clean up api directory, copy over fresh version
@@ -699,21 +705,15 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 .PHONY: golangci-lint
-golangci-lint: $(LINTER)
-$(LINTER): $(LOCALBIN)
-	@test -s $(LOCALBIN)/golangci-lint || \
+golangci-lint:
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(LINTER_VERSION)
 
 .PHONY: govulncheck
-govulncheck: $(GOVULNCHECK)
-$(GOVULNCHECK): $(LOCALBIN)
-	@test -s $(GOVULNCHECK) || \
+govulncheck:
 	GOBIN=$(LOCALBIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 
 .PHONY: goimport
-goimport: $(GOIMPORT)
-$(GOIMPORT): $(LOCALBIN)
-	@test -s $(LOCALBIN)/goimport || \
+goimport:
 	GOBIN=$(LOCALBIN) go install golang.org/x/tools/cmd/goimports@latest
 
 #####
